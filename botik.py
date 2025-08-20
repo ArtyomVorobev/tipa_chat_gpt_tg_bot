@@ -13,12 +13,27 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+# TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+# OPENAI_API_KEY_CHAT = os.getenv("OPENAI_API_KEY_CHAT")
+# OPENAI_API_KEY_SUMMARIZE = os.getenv("OPENAI_API_KEY_SUMMARIZE")
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+OPENAI_API_KEY_CHAT = os.getenv("OPENAI_API_KEY_CHAT")
+OPENAI_API_KEY_SUMMARIZE = os.getenv("OPENAI_API_KEY_SUMMARIZE")
+
 MISTRAL_ENDPOINT = "https://api.mistral.ai/v1/chat/completions"
+
+MAX_CONTEXT_LEN=2
 
 # --- Redis ---
 r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
+chat_bot = ClientChatBot(
+        chat_model_endpoint="https://openrouter.ai/api/v1", 
+        chat_model="openai/gpt-oss-20b:free", 
+        summarize_model_endpoint="https://api.mistral.ai/v1", 
+        summarize_model="mistral-tiny",
+)
 
 # --- Вспомогательные функции ---
 def get_history(user_id):
@@ -34,18 +49,24 @@ def clear_history(user_id):
     r.delete(f"history:{user_id}")
 
 
-def mistral_reply(messages):
-    headers = {
-        "Authorization": f"Bearer {MISTRAL_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "mistral-tiny",  # можно заменить
-        "messages": messages
-    }
-    resp = requests.post(MISTRAL_ENDPOINT, headers=headers, json=payload, timeout=60)
-    data = resp.json()
-    return data["choices"][0]["message"]["content"]
+def mistral_reply(messages, user_id):
+    # headers = {
+    #     "Authorization": f"Bearer {MISTRAL_API_KEY}",
+    #     "Content-Type": "application/json"
+    # }
+    # payload = {
+    #     "model": "mistral-tiny",  # можно заменить
+    #     "messages": messages
+    # }
+    # resp = requests.post(MISTRAL_ENDPOINT, headers=headers, json=payload, timeout=60)
+    # data = resp.json()
+    # return data["choices"][0]["message"]["content"]
+    reply = chat_bot.chat(messages, user_id)
+    return reply
+
+def summarize_history(history):
+    summarization = chat_bot.summarize_context(history)
+    return summarization
 
 
 # --- Handlers ---
@@ -84,22 +105,74 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     thinking_msg = await update.message.reply_text("🤔 Думаю над ответом…")
 
     try:
-        reply = mistral_reply(history)
+        reply = mistral_reply(history, user_id)
     except Exception as e:
         logging.error(e)
         await thinking_msg.edit_text("⚠️ Ошибка при обращении к API.")
         return
 
     history.append({"role": "assistant", "content": reply})
-    save_history(user_id, history)
 
+    if len(history) >= MAX_CONTEXT_LEN: 
+        history = summarize_history(history)
+
+    save_history(user_id, history)
     await thinking_msg.edit_text(reply)
 
+class ClientChatBot:
+  def __init__(self, 
+               chat_model_endpoint, 
+               chat_model, 
+               summarize_model_endpoint, 
+               summarize_model,
+               MAX_CONTEXT_LEN=5,
+               ):
+    
+    self.chat_headers = {
+        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY_CHAT')}",
+        "Content-Type": "application/json"
+    }
+    self.chat_model = chat_model
+    self.chat_model_endpoint = chat_model_endpoint
+
+    self.chat_headers = {
+        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY_SUMMARIZE')}",
+        "Content-Type": "application/json"
+    }
+    self.summarize_model = summarize_model
+    self.summarize_model_endpoint = summarize_model_endpoint
+  
+  def summarize_context(self, user_context, user_id): 
+    summarize_prompt = self._get_summarize_prompt(user_context)
+    summarize_payload = {
+        "model": self.summarize_model,  # можно заменить
+        "messages": summarize_prompt
+    }
+    resp = requests.post(self.summarize_model_endpoint, headers=self.summarize_headers, json=summarize_payload, timeout=60)
+    summarization = resp.json()
+    summarization = reply["choices"][0]["message"]["content"]
+    return summarization
+
+  def _get_summarize_prompt(context):
+    summary_prompt = [
+        {"role": "system", "content": "You are a conversation summarizer."},
+        {"role": "user", "content": f"Summarize the following conversation briefly, keeping only the essential facts:\n\n{context}"}
+    ]
+    return summary_prompt
+
+  def chat(self, user_input):
+    chat_payload = {
+        "model": self.chat_model,  # можно заменить
+        "messages": user_input
+    }
+    resp = requests.post(self.chat_model_endpoint, headers=self.chat_headers, json=chat_payload, timeout=60)
+    reply = resp.json()
+    reply = reply["choices"][0]["message"]["content"]
+    return reply
 
 # --- Main ---
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("new", new_dialog))
     app.add_handler(CommandHandler("help", help_cmd))
