@@ -51,7 +51,7 @@ class ClientChatBot:
     self.summarize_model = summarize_model
     self.summarize_model_endpoint = summarize_model_endpoint
   
-  def summarize_context(self, user_context, user_id): 
+  def summarize_context(self, user_context): 
     summarize_prompt = self._get_summarize_prompt(user_context)
     summarize_payload = {
         "model": self.summarize_model,  # можно заменить
@@ -100,7 +100,7 @@ def clear_history(user_id):
     r.delete(f"history:{user_id}")
 
 
-def mistral_reply(messages, user_id):
+def mistral_reply(messages):
     # headers = {
     #     "Authorization": f"Bearer {MISTRAL_API_KEY}",
     #     "Content-Type": "application/json"
@@ -112,7 +112,7 @@ def mistral_reply(messages, user_id):
     # resp = requests.post(MISTRAL_ENDPOINT, headers=headers, json=payload, timeout=60)
     # data = resp.json()
     # return data["choices"][0]["message"]["content"]
-    reply = chat_bot.chat(messages, user_id)
+    reply = chat_bot.chat(messages)
     return reply
 
 def summarize_history(history):
@@ -156,7 +156,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     thinking_msg = await update.message.reply_text("🤔 Думаю над ответом…")
 
     try:
-        reply = mistral_reply(history, user_id)
+        reply = mistral_reply(history)
     except Exception as e:
         logging.error(e)
         await thinking_msg.edit_text("⚠️ Ошибка при обращении к API.")
