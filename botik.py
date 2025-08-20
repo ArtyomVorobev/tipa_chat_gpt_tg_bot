@@ -9,9 +9,12 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # Логирование
 logging.basicConfig(level=logging.INFO)
 
-# --- Конфиг ---
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_TOKEN"
-MISTRAL_API_KEY = "YOUR_MISTRAL_KEY"
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 MISTRAL_ENDPOINT = "https://api.mistral.ai/v1/chat/completions"
 
 # --- Redis ---
