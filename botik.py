@@ -27,7 +27,7 @@ def get_history(user_id):
 
 
 def save_history(user_id, history):
-    r.set(f"history:{user_id}", json.dumps(history))
+    r.set(f"history:{user_id}", json.dumps(history, ensure_ascii=False))
 
 
 def clear_history(user_id):
